@@ -15,10 +15,14 @@ let signature: string;
 let msg: string;
 let addr: SignerWithAddress;
 let value: any;
-let chainId: any;
+let chainId1: any;
+let chainId2: any;
+let totalSupply: any;
 
-value = 100; //tokens
-chainId = 1;
+value = 1000; //tokens to transfer
+chainId1 = 1;
+chainId2 = 57;
+totalSupply = 1000000; //tokens
 
 
 
@@ -27,92 +31,52 @@ describe("Staking", function () {
     [owner, addr2, addr3] = await ethers.getSigners();
 
     Token = await ethers.getContractFactory("TokenERC20");
-    token = await Token.deploy(ethers.utils.parseUnits("1000000", 18), "BridgeToken", "BT");
+    token = await Token.deploy(ethers.utils.parseUnits(`${totalSupply}`, 18), "BridgeToken", "BT");
     await token.deployed();
 
     Bridge = await ethers.getContractFactory("Bridge");
-    bridge = await Bridge.deploy(token.address, 1, 57);
+    bridge = await Bridge.deploy(token.address, chainId1, chainId2);
     await bridge.deployed();
 
-    await bridge.includeToken(token.address);
-
-    await token.approve(bridge.address, ethers.utils.parseUnits(value, 18));
-
-    await bridge.swap(ethers.utils.parseUnits(value, 18), addr2, chainId);
-
-    msg = ethers.utils.solidityKeccak256(["address", "uint256"], [addr2, value]);
-    signature = await owner.signMessage(ethers.utils.arrayify(msg));
-    let sig = await ethers.utils.splitSignature(signature);
-
-    //await contract.checkSign(addr, value, sig.v, sig.r, sig.s);
+    await token.approve(bridge.address, ethers.utils.parseUnits(`${value}`, 18));
 
   });
 
-  // it("check stake function", async function () {
-  //   await staking.stake(ethers.utils.parseUnits("100", 18))
-  //   expect(await staking.totalSupply()).to.equal(ethers.utils.parseUnits("100", 18))
-  //   let staker = await staking.balances(owner.address);
-  //   expect(await staker.unclaimableBalance).to.equal(ethers.utils.parseUnits("100", 18));
-  //   expect(await staker.pendingRewards).to.equal(ethers.utils.parseUnits("20", 18));
-  //   expect(await lpToken.balanceOf(staking.address)).to.equal(ethers.utils.parseUnits("100", 18));
-    
-  // });
-  // it("Time to claim require check", async function () {
-  //   await expect(staking.claim()).to.be.revertedWith("Reward is not available");
-  // });
+  it("check swap and burn", async function () {
+    await bridge.swap(ethers.utils.parseUnits(`${value}`, 18), addr2.address);
+    expect(await token.balanceOf(owner.address)).to.equal(ethers.utils.parseUnits(`${totalSupply - value}`, 18));
+    expect(await token.totalSupply()).to.equal(ethers.utils.parseUnits(`${totalSupply - value}`, 18));
+    //event check
+  });
 
-  // it("checking Claim reward tokens function", async function () {
-  //   await staking.stake(ethers.utils.parseUnits("100", 18))
-  //   const roundTime = 12 * 60 * 60; //12 minutes
-  //   await network.provider.send("evm_increaseTime", [roundTime]);
-  //   await network.provider.send("evm_mine");
-  //   await staking.claim();
-  //   const staker = await staking.balances(owner.address);
-  //   expect(await staker.claimableReward).to.equal('0');
-  //   expect(await rwToken.balanceOf(owner.address)).to.equal(ethers.utils.parseUnits("20", 18));
-  // });
+  it("Redeem check, msg not for this chain", async function () {
+    msg = ethers.utils.solidityKeccak256(["address", "uint256", "uint256"], [addr2.address, ethers.utils.parseUnits(`${value}`, 18), 0]);
+    signature = await owner.signMessage(ethers.utils.arrayify(msg));
+    let sig = await ethers.utils.splitSignature(signature);
 
-  // it("No staked tokens revert checking", async function () {
-  //   await expect(staking.unstake(ethers.utils.parseUnits("100", 18))).to.revertedWith("No tokens staked");
-  // });
+    await expect(bridge.redeem(addr2.address, value, chainId2, 0, sig.v, sig.r, sig.s)).to.be.revertedWith('chain is not correct');
+  });
 
-  // it("Time to unstake require check", async function () {
-  //   await staking.stake(ethers.utils.parseUnits("100", 18))
-  //   await expect(staking.unstake(ethers.utils.parseUnits("70", 18))).to.revertedWith("Lockup time doesn't over");
-  // });
+  it("Redeem check, validator check", async function () {
+    msg = ethers.utils.solidityKeccak256(["address", "uint256", "uint256"], [addr2.address, ethers.utils.parseUnits(`${value}`, 18), 0]);
+    signature = await owner.signMessage(ethers.utils.arrayify(msg));
+    let sig = await ethers.utils.splitSignature(signature);
+    await bridge.redeem(addr2.address, ethers.utils.parseUnits(`${value}`), chainId1, 0, sig.v, sig.r, sig.s);
+  });
 
-  // it("Time to unstake require check", async function () {
-  //   await staking.stake(ethers.utils.parseUnits("100", 18))
-  //   const roundTime = 22 * 60 * 60; //22 minutes
-  //   await network.provider.send("evm_increaseTime", [roundTime]);
-  //   await network.provider.send("evm_mine");
-  //   await expect(staking.unstake(ethers.utils.parseUnits("150", 18))).to.revertedWith("Don't have enough tokens unstake");
-  // });
+  it("Redeem check, wrong sign revert check", async function () {
+    msg = ethers.utils.solidityKeccak256(["address", "uint256", "uint256"], [addr2.address, ethers.utils.parseUnits(`${value}`, 18), 0]);
+    signature = await owner.signMessage(ethers.utils.arrayify(msg));
+    let sig = await ethers.utils.splitSignature(signature);
+    await expect(bridge.redeem(addr2.address, ethers.utils.parseUnits(`${value}`), chainId1, 1, sig.v, sig.r, sig.s)).to.be.revertedWith('sign does not correct!');
+  });
 
-  // it("Checking Unstake lp tokens function", async function () {
-  //     await staking.stake(ethers.utils.parseUnits("100", 18))
-  //     const roundTime = 22 * 60 * 60; //22 minutes
-  //     await network.provider.send("evm_increaseTime", [roundTime]);
-  //     await network.provider.send("evm_mine");
-  //     await staking.unstake(ethers.utils.parseUnits("70", 18));
-  //     expect(await lpToken.balanceOf(staking.address)).to.equal(ethers.utils.parseUnits("30", 18));
-  //     expect(await lpToken.balanceOf(owner.address)).to.equal(ethers.utils.parseUnits("970", 18));
-  //     const staker = staking.balances(owner.address);
-  // });
-
-  // it("checking change of reward time", async function () {
-  //   await staking.changeRewardTime(30);
-  //   expect(await staking.rewardTime()).to.equal(30);
-  // });
-
-  // it("checking change of lock up tokens time", async function () {
-  //   await staking.changeLockUpTime(30);
-  //   expect(await staking.lockUpTime()).to.equal(30);
-  // });
-
-  // it("checking change of reward rate", async function () {
-  //   await staking.changeRewardRate(50);
-  //   expect(await staking.rewardRate()).to.equal(50);
-  // });
+  it("Redeem check, validator check", async function () {
+    msg = ethers.utils.solidityKeccak256(["address", "uint256", "uint256"], [addr2.address, ethers.utils.parseUnits(`${value}`, 18), 0]);
+    signature = await owner.signMessage(ethers.utils.arrayify(msg));
+    let sig = await ethers.utils.splitSignature(signature);
+    await bridge.redeem(addr2.address, ethers.utils.parseUnits(`${value}`), chainId1, 0, sig.v, sig.r, sig.s);
+    await expect(bridge.redeem(addr2.address, ethers.utils.parseUnits(`${value}`), chainId1, 0, sig.v, sig.r, sig.s)).to.be.revertedWith('transfer already processed');
+  });
 
 });
